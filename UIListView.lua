@@ -1104,4 +1104,31 @@ function UIListView:copyClonedWidgetChildren_(node)
     end
 end
 
+--[[
+customize isSideShow for async mode
+]]
+function UIListView:isSideShow()
+    if not self.bAsyncLoad or #self.items_ == 0 then
+        return UIListView.super.isSideShow(self)
+    end
+
+    local bound = self.scrollNode:getCascadeBoundingBox()
+    local localPos = self:convertToNodeSpace(cc.p(bound.x, bound.y))
+    local count = self.delegate_[UIListView.DELEGATE](self, UIListView.COUNT_TAG)
+    local verticalSideShow = ((localPos.y > self.viewRect_.y) and (self.items_[#self.items_].idx_ == count))
+    or ((localPos.y + bound.height < self.viewRect_.y + self.viewRect_.height) and (self.items_[1].idx_ == 1))
+    local horizontalSideShow = ((localPos.x > self.viewRect_.x) and (self.items_[1].idx_ == 1))
+    or ((localPos.x + bound.width < self.viewRect_.x + self.viewRect_.width) and (self.items_[#self.items_].idx_ == count))
+    if UIScrollView.DIRECTION_VERTICAL == self.direction then
+        return verticalSideShow
+    elseif UIScrollView.DIRECTION_HORIZONTAL == self.direction then
+        return horizontalSideShow
+    else
+        return (verticalSideShow or horizontalSideShow)
+    end
+
+    return false
+end
+
+
 return UIListView
