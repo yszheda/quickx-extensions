@@ -845,9 +845,6 @@ function UIListView:increaseOrReduceItem_()
 
     -- print("increaseOrReduceItem_() adjust:" .. nNeedAdjust)
     -- print("increaseOrReduceItem_() item count:" .. #self.items_)
-    if nNeedAdjust > 0 then
-        return self:increaseOrReduceItem_()
-    end
 end
 
 --[[--
