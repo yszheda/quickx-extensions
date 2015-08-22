@@ -528,13 +528,13 @@ function UIListView:layout_()
 end
 
 function UIListView:notifyItem(point)
-    local count = self.listener[UIListView.DELEGATE](self, UIListView.COUNT_TAG)
+    local count = self.delegate_[UIListView.DELEGATE](self, UIListView.COUNT_TAG)
     local temp = (self.direction == UIListView.DIRECTION_VERTICAL and self.container:getContentSize().height) or 0
     local w,h = 0, 0
     local tag = 0
 
     for i = 1, count do
-        w,h = self.listener[UIListView.DELEGATE](self, UIListView.CELL_SIZE_TAG, i)
+        w,h = self.delegate_[UIListView.DELEGATE](self, UIListView.CELL_SIZE_TAG, i)
         if self.direction == UIListView.DIRECTION_VERTICAL then
             temp = temp - h
             if point.y > temp then
@@ -558,7 +558,7 @@ function UIListView:notifyItem(point)
     end
 
     local item = self.container:getChildByTag(tag)
-    self.listener[UIListView.DELEGATE](self, UIListView.CLICKED_TAG, tag, point)
+    self.delegate_[UIListView.DELEGATE](self, UIListView.CLICKED_TAG, tag, point)
 end
 
 function UIListView:moveItems(beginIdx, endIdx, x, y, bAni)
