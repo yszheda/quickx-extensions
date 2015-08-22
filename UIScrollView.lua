@@ -32,6 +32,8 @@ quick 滚动控件
 
 ]]
 
+local scheduler = require(cc.PACKAGE_NAME .. ".scheduler")
+
 local UIScrollView = class("UIScrollView", function()
     return cc.ClippingRegionNode:create()
 end)
@@ -42,6 +44,13 @@ UIScrollView.TOUCH_ZORDER 			= -99
 UIScrollView.DIRECTION_BOTH			= 0
 UIScrollView.DIRECTION_VERTICAL		= 1
 UIScrollView.DIRECTION_HORIZONTAL	= 2
+
+--[[--
+settings of cc.ScrollView
+]]
+UIScrollView.SCROLL_DEACCEL_RATE    = 0.95
+UIScrollView.SCROLL_DEACCEL_DIST    = 1.0
+UIScrollView.BOUNCE_DURATION        = 0.15
 
 -- start --
 
@@ -108,6 +117,23 @@ function UIScrollView:ctor(params)
     self:scheduleUpdate()
 
     self.args_ = {params}
+
+    --[[
+    NOTE: if the scroll node is NodeEventDisabled, the UIScrollView itself will remove scheduler handles.
+    ]]
+    self:setNodeEventEnabled(true)
+    self:addNodeEventListener(cc.NODE_EVENT, function(event)
+        if event.name == "exit" then
+            if self.performedAnimatedScrollHandle then
+                scheduler.unscheduleGlobal(self.performedAnimatedScrollHandle)
+                self.performedAnimatedScrollHandle = nil
+            end
+            if self.deaccelerateScrollingHandle then
+                scheduler.unscheduleGlobal(self.deaccelerateScrollingHandle)
+                self.deaccelerateScrollingHandle = nil
+            end
+        end
+    end)
 end
 
 function UIScrollView:addBgColorIf(params)
@@ -368,6 +394,22 @@ function UIScrollView:addScrollNode(node)
     end)
     self:addTouchNode()
 
+    --[[
+    Remove scheduler handles if the scroll node is removed.
+    ]]
+    node:addNodeEventListener(cc.NODE_EVENT, function(event)
+        if event.name == "exit" then
+            if self.performedAnimatedScrollHandle then
+                scheduler.unscheduleGlobal(self.performedAnimatedScrollHandle)
+                self.performedAnimatedScrollHandle = nil
+            end
+            if self.deaccelerateScrollingHandle then
+                scheduler.unscheduleGlobal(self.deaccelerateScrollingHandle)
+                self.deaccelerateScrollingHandle = nil
+            end
+        end
+    end)
+
     return self
 end
 
@@ -417,6 +459,84 @@ function UIScrollView:update_(dt)
     self:drawScrollBar()
 end
 
+function UIScrollView:setContentOffset(offset, animated)
+    if animated then
+        self:setContentOffsetInDuration(offset, UIListView.BOUNCE_DURATION)
+    else
+        self.scrollNode:setPosition(offset)
+        self.position_ = {
+            x = newX,
+            y = newY,
+        }
+    end
+end
+
+function UIScrollView:setContentOffsetInDuration(offset, dt)
+    local scroll = cc.MoveTo:create(dt, offset)
+    local expire = cc.CallFunc:create(function()
+        self:stoppedAnimatedScroll()
+    end)
+    self.scrollNode:runAction(cc.Sequence:create(scroll, expire))
+    if self.performedAnimatedScrollHandle then
+        scheduler.unscheduleGlobal(self.performedAnimatedScrollHandle)
+        self.performedAnimatedScrollHandle = nil
+    end
+    self.performedAnimatedScrollHandle = scheduler.scheduleUpdateGlobal(handler(self, self.performedAnimatedScroll))
+end
+
+function UIScrollView:stoppedAnimatedScroll()
+    if self.performedAnimatedScrollHandle then
+        scheduler.unscheduleGlobal(self.performedAnimatedScrollHandle)
+        self.performedAnimatedScrollHandle = nil
+    end
+end
+
+function UIScrollView:performedAnimatedScroll(dt)
+    if self.dragging_ then
+        if self.performedAnimatedScrollHandle then
+            scheduler.unscheduleGlobal(self.performedAnimatedScrollHandle)
+            self.performedAnimatedScrollHandle = nil
+        end
+        return
+    end
+end
+
+function UIScrollView:deaccelerateScrolling(dt)
+    if self.dragging_ then
+        if self.deaccelerateScrollingHandle then
+            scheduler.unscheduleGlobal(self.deaccelerateScrollingHandle)
+            self.deaccelerateScrollingHandle = nil
+        end
+        return
+    end
+    if not self.scrollNode or tolua.isnull(self.scrollNode) then
+        if self.deaccelerateScrollingHandle then
+            scheduler.unscheduleGlobal(self.deaccelerateScrollingHandle)
+            self.deaccelerateScrollingHandle = nil
+        end
+        return
+    end
+    local newX = self.scrollNode:getPositionX() + self.scrollDistance_.x
+    local newY = self.scrollNode:getPositionY() + self.scrollDistance_.y
+    self.scrollNode:setPosition(cc.p(newX, newY))
+    self.position_ = {
+        x = newX,
+        y = newY,
+    }
+    self.scrollDistance_.x = self.scrollDistance_.x * UIScrollView.SCROLL_DEACCEL_RATE
+    self.scrollDistance_.y = self.scrollDistance_.y * UIScrollView.SCROLL_DEACCEL_RATE
+    self:setContentOffset(cc.p(newX, newY))
+    if (math.abs(self.scrollDistance_.x) <= UIScrollView.SCROLL_DEACCEL_DIST
+        and math.abs(self.scrollDistance_.y) <= UIScrollView.SCROLL_DEACCEL_DIST)
+        or self:isSideShow() then
+        if self.deaccelerateScrollingHandle then
+            scheduler.unscheduleGlobal(self.deaccelerateScrollingHandle)
+            self.deaccelerateScrollingHandle = nil
+        end
+        self:elasticScroll()
+    end
+end
+
 function UIScrollView:onTouchCapture_(event)
     if ("began" == event.name or "moved" == event.name or "ended" == event.name)
         and self:isTouchInViewRect(event) then
@@ -440,6 +560,20 @@ function UIScrollView:onTouch_(event)
     end
 
     if "began" == event.name then
+        if self.deaccelerateScrollingHandle then
+            scheduler.unscheduleGlobal(self.deaccelerateScrollingHandle)
+            self.deaccelerateScrollingHandle = nil
+        end
+        if self.performedAnimatedScrollHandle then
+            scheduler.unscheduleGlobal(self.performedAnimatedScrollHandle)
+            self.performedAnimatedScrollHandle = nil
+        end
+        self.touchPoint_ = cc.p(event.x, event.y)
+        self.touchMoved_ = false
+        self.dragging_ = true
+        self.scrollDistance_ = cc.p(0, 0)
+        self.touchLength_ = 0
+
         self.prevX_ = event.x
         self.prevY_ = event.y
         self.bDrag_ = false
@@ -460,6 +594,28 @@ function UIScrollView:onTouch_(event)
             return
         end
 
+        local moveDistance = cc.p(0, 0)
+        moveDistance.x = event.x - self.touchPoint_.x
+        moveDistance.y = event.y - self.touchPoint_.y
+        local dis = 0
+        if self.direction == UIScrollView.DIRECTION_VERTICAL then
+            dis = moveDistance.y
+            moveDistance.x = 0
+        elseif self.direction == UIScrollView.DIRECTION_HORIZONTAL then
+            dis = moveDistance.x
+            moveDistance.y = 0
+        else
+            dis = math.sqrt(moveDistance.x * moveDistance.x + moveDistance.y * moveDistance.y)
+        end
+        if not self.touchMoved_ then
+            moveDistance = cc.p(0, 0)
+        end
+        self.touchPoint_ = cc.p(event.x, event.y)
+        self.touchMoved_ = true
+        if self.dragging_ then
+            self.scrollDistance_ = moveDistance
+        end
+
         self.bDrag_ = true
         self.speed.x = event.x - event.prevX
         self.speed.y = event.y - event.prevY
@@ -476,13 +632,37 @@ function UIScrollView:onTouch_(event)
         self:callListener_{name = "moved", x = event.x, y = event.y}
     elseif "ended" == event.name then
         if self.bDrag_ then
+            if self.touchMoved_ then
+                if self:isSideShow() then
+                    if self.deaccelerateScrollingHandle then
+                        scheduler.unscheduleGlobal(self.deaccelerateScrollingHandle)
+                        self.deaccelerateScrollingHandle = nil
+                    end
+                    self:elasticScroll()
+                else
+                    if self.deaccelerateScrollingHandle then
+                        scheduler.unscheduleGlobal(self.deaccelerateScrollingHandle)
+                        self.deaccelerateScrollingHandle = nil
+                    end
+                    self.deaccelerateScrollingHandle = scheduler.scheduleUpdateGlobal(handler(self, self.deaccelerateScrolling))
+                end
+            else
+                if self:isSideShow() then
+                    self:elasticScroll()
+                end
+            end
+            self.dragging_ = false
+            self.touchMoved_ = false
+
             self.bDrag_ = false
-            self:scrollAuto()
 
             self:callListener_{name = "ended", x = event.x, y = event.y}
 
             self:disableScrollBar()
         else
+            if self:isSideShow() then
+                self:elasticScroll()
+            end
             self:callListener_{name = "clicked", x = event.x, y = event.y}
         end
     end
