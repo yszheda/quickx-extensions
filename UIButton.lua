@@ -569,7 +569,8 @@ function UIButton:getDefaultState_()
 end
 
 function UIButton:checkTouchInSprite_(x, y)
-    local sprite = (self.sprite_[self:getDefaultState_()] or {})[1]
+    local defaultState = self:getDefaultState_()[1]
+    local sprite = (self.sprite_[defaultState] or {})[1]
     if self.touchInSpriteOnly_ then
         return sprite and sprite:getCascadeBoundingBox():containsPoint(cc.p(x, y))
     else
