@@ -1130,5 +1130,132 @@ function UIListView:isSideShow()
     return false
 end
 
+--[[--
+Refresh UIListView at the current postion.
+NOTE: only needed in async mode
+]]
+function UIListView:refresh()
+    if not self.bAsyncLoad then
+        self:reload()
+        return
+    end
+
+    if #self.items_ <= 0 then
+        self:reload()
+        return
+    end
+
+    local originPos = self:getOriginPosition()
+    -- index of the previous beginning item
+    local beginIdx = self.items_[1].idx_
+
+    self:removeAllItems()
+    self.container:setPosition(0, 0)
+    self.container:setContentSize(cc.size(0, 0))
+
+    self:drawFromIdx(beginIdx, originPos.x, originPos.y)
+end
+
+--[[--
+Get the original position of the reloaded UIListView.
+NOTE: only needed in async mode
+]]
+function UIListView:getOriginPosition()
+    if not self.bAsyncLoad then
+        return
+    end
+
+    local getContainerCascadeBoundingBox = function (listView)
+        local boundingBox
+        for i, item in ipairs(listView.items_) do
+            local w,h = item:getItemSize()
+            local x,y = item:getPosition()
+            local anchor = item:getAnchorPoint()
+            x = x - anchor.x * w
+            y = y - anchor.y * h
+
+            if boundingBox then
+                boundingBox = cc.rectUnion(boundingBox, cc.rect(x, y, w, h))
+            else
+                boundingBox = cc.rect(x, y, w, h)
+            end
+        end
+
+        local point = listView.container:convertToWorldSpace(cc.p(boundingBox.x, boundingBox.y))
+        boundingBox.x = point.x
+        boundingBox.y = point.y
+        return boundingBox
+    end
+
+    local cascadeBound = getContainerCascadeBoundingBox(self)
+--  local cascadeBound = self.scrollNode:getCascadeBoundingBox()
+
+
+    local localPos = self:convertToNodeSpace(cc.p(cascadeBound.x, cascadeBound.y))
+
+    local originPosX = 0
+    local originPosY = 0
+    if cc.ui.UIScrollView.DIRECTION_VERTICAL == self.direction then
+        -- ahead part of view
+        originPosY = localPos.y + cascadeBound.height - self.viewRect_.y - self.viewRect_.height
+    else
+        -- left part of view
+        originPosX = - self.viewRect_.x + localPos.x
+    end
+--    print("originPosX:", originPosX)
+--    print("originPosY:", originPosY)
+
+    return cc.p(originPosX, originPosY)
+end
+
+--[[--
+Draw UIListView from the `beginIdx`th item at the position (`originPosX`, `originPosY`).
+NOTE: only needed in async mode
+]]
+function UIListView:drawFromIdx(beginIdx, originPosX, originPosY)
+    if not self.bAsyncLoad then
+        self:reload()
+        return
+    end
+
+    self:removeAllItems()
+    self.container:setPosition(0, 0)
+    self.container:setContentSize(cc.size(0, 0))
+
+    local beginIdx = beginIdx or 1
+    local originPosX = originPosX or 0
+    local originPosY = originPosY or 0
+
+    local count = self.delegate_[cc.ui.UIListView.DELEGATE](self, cc.ui.UIListView.COUNT_TAG)
+    self.items_ = {}
+    local itemW, itemH = 0, 0
+    local item
+    local containerW, containerH = 0, 0
+    for i = beginIdx, count do
+--        print("loadOneItem_:", i)
+        item, itemW, itemH = self:loadOneItem_(cc.p(originPosX, originPosY), i)
+        if cc.ui.UIScrollView.DIRECTION_VERTICAL == self.direction then
+            originPosY = originPosY - itemH
+            containerH = containerH + itemH
+        else
+            originPosX = originPosX + itemW
+            containerW = containerW + itemW
+        end
+        if containerW > self.viewRect_.width + self.redundancyViewVal
+            or containerH > self.viewRect_.height + self.redundancyViewVal then
+            break
+        end
+    end
+--    print("[]refresh items:", #self.items_)
+
+    if cc.ui.UIScrollView.DIRECTION_VERTICAL == self.direction then
+        self.container:setPosition(self.viewRect_.x,
+            self.viewRect_.y + self.viewRect_.height)
+    else
+        self.container:setPosition(self.viewRect_.x, self.viewRect_.y)
+    end
+
+    self:increaseOrReduceItem_()
+end
 
 return UIListView
