@@ -1258,4 +1258,51 @@ function UIListView:drawFromIdx(beginIdx, originPosX, originPosY)
     self:increaseOrReduceItem_()
 end
 
+--[[--
+Scroll listView according to the current position of the first item.
+@scrollBackward: scroll backward or forward
+NOTE: only supported in async mode temporarily, extend it for sync mode if you need.
+]]
+function UIListView:scrollWithFirstItem(scrollBackward)
+    local SCROLL_ACTION_TIME = 0.3
+
+    if not self.bAsyncLoad then
+        self:reload()
+        return
+    end
+
+    if #self.items_ <= 0 then
+        self:reload()
+        return
+    end
+
+    local originPos = self:getOriginPosition()
+    local item = self.items_[1]
+
+    local finalPosX = originPos.x
+    local finalPosY = originPos.y
+
+    if scrollBackward then
+        if cc.ui.UIScrollView.DIRECTION_VERTICAL == self.direction then
+            finalPosY = 0
+        else
+            finalPosX = 0
+        end
+    else
+        local width, height = item:getItemSize()
+        if cc.ui.UIScrollView.DIRECTION_VERTICAL == self.direction then
+            finalPosY = -height
+        else
+            finalPosX = -width
+        end
+    end
+
+    self.scrollNode:stopAllActions()
+    local move = cc.MoveTo:create(SCROLL_ACTION_TIME, cc.p(finalPosX, finalPosY))
+    local callFunc = cc.CallFunc:create(xyd.scb(self, function()
+        self:elasticScroll()
+    end))
+    self.scrollNode:runAction(cc.Sequence:create(move, callFunc))
+end
+
 return UIListView
