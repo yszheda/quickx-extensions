@@ -57,6 +57,13 @@ UIListView.ALIGNMENT_TOP			= 3
 UIListView.ALIGNMENT_BOTTOM			= 4
 UIListView.ALIGNMENT_HCENTER		= 5
 
+UIListView.SIDE = {
+    LEFT                            = 1,
+    RIGHT                           = 2,
+    TOP                             = 3,
+    BOTTOM                          = 4,
+}
+
 -- start --
 
 --------------------------------
@@ -1128,6 +1135,47 @@ function UIListView:isSideShow()
     end
 
     return false
+end
+
+--[[--
+Check if it is empty on the side of UIListView.
+@includingBorder: include the border of UIListView item in empty area
+NOTE: only supported in async mode temporarily, extend it for sync mode if you need.
+]]
+function UIListView:isEmptyOnSide(side, includingBorder)
+    if not self.bAsyncLoad or #self.items_ == 0 then
+        return
+    end
+
+    local includingBorder = includingBorder or true
+
+    local bound = self.scrollNode:getCascadeBoundingBox()
+    local localPos = self:convertToNodeSpace(cc.p(bound.x, bound.y))
+    local count = self.delegate_[UIListView.DELEGATE](self, UIListView.COUNT_TAG)
+
+    local function condition(canEqual, a, b)
+        return (a > b) or (canEqual and (a == b))
+    end
+
+    local result = false
+    if UIListView.SIDE.LEFT == side then
+        if self.items_[1].idx_ == 1 then
+            result = condition(includingBorder, localPos.x, self.viewRect_.x)
+        end
+    elseif UIListView.SIDE.RIGHT == side then
+        if self.items_[#self.items_].idx_ == count then
+            result = condition(includingBorder, self.viewRect_.x + self.viewRect_.width, localPos.x + bound.width)
+        end
+    elseif UIListView.SIDE.BOTTOM == side then
+        if self.items_[#self.items_].idx_ == count then
+            result = condition(includingBorder, localPos.y, self.viewRect_.y)
+        end
+    elseif UIListView.SIDE.TOP == side then
+        if self.items_[1].idx_ == 1 then
+            result = condition(includingBorder, self.viewRect_.y + self.viewRect_.height, localPos.y + bound.height)
+        end
+    end
+    return result
 end
 
 --[[--
