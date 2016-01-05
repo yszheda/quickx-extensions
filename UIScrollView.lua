@@ -80,6 +80,7 @@ UIScrollView.BOUNCE_DURATION        = 0.15
 -- end --
 
 function UIScrollView:ctor(params)
+    self.scrollEnabled = true
     self.bBounce = true
     self.nShakeVal = 5
     self.direction = UIScrollView.DIRECTION_BOTH
@@ -590,7 +591,7 @@ function UIScrollView:onTouch_(event)
 
         return true
     elseif "moved" == event.name then
-        if self:isShake(event) then
+        if not self:isScrollEnabled() or self:isShake(event) then
             return
         end
 
@@ -980,6 +981,14 @@ function UIScrollView:changeViewRectToNodeSpaceIf()
     self.viewRect_.x = self.viewRect_.x + ws.x
     self.viewRect_.y = self.viewRect_.y + ws.y
     self.viewRectIsNodeSpace = true
+end
+
+function UIScrollView:setScrollEnabled(scrollEnabled)
+    self.scrollEnabled = scrollEnabled
+end
+
+function UIScrollView:isScrollEnabled()
+    return self.scrollEnabled
 end
 
 function UIScrollView:isShake(event)
